@@ -8,7 +8,7 @@ namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class FotoController : GenericController<Foto>
+    public class FotoController : GenericController<foto>
     {
         public FotoController() : base(Parametros.FabricaRepository.FotoRepository())
         {

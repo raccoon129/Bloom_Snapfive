@@ -8,16 +8,16 @@ using FluentValidation;
 
 namespace COMMON.Validadores
 {
-    public class AjusteUsuarioValidator:AbstractValidator<Ajuste_Usuario>
+    public class AjusteUsuarioValidator:AbstractValidator<ajuste_usuario>
     {
         public AjusteUsuarioValidator()
         {
             // Constructor
-            RuleFor(x => x.IdUsuario)
+            RuleFor(x => x.id_usuario)
     .NotEmpty().WithMessage("El ID del usuario es obligatorio")
     .GreaterThan(0).WithMessage("El ID del usuario debe ser mayor que 0");
 
-            RuleFor(x => x.OtrosAjustes)
+            RuleFor(x => x.otros_ajustes)
     .MaximumLength(4000).WithMessage("La longitud máxima para otros ajustes es de 4000 caracteres");
         
     }

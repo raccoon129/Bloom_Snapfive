@@ -5,74 +5,86 @@ using FluentValidation;
 using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-//ESTE YA FUNCIONA. POSTGRES Y SQLSERVER NO ES FUNCIONAL
 namespace DAL
 {
     /// <summary>
-    /// Implementación de IDB para MySQL que maneja la conversión entre nomenclatura PascalCase (.NET)
-    /// y snake_case (MySQL) de manera automática.
+    /// Implementación de acceso a datos para MySQL aplicable a todas las entidades
+    /// del sistema que heredan de CamposControl.
     /// </summary>
-    /// <typeparam name="T">Tipo de entidad que debe heredar de CamposControl</typeparam>
+    /// <typeparam name="T">Tipo de entidad que implementa CamposControl</typeparam>
     public class MySQL<T> : IDB<T> where T : CamposControl
     {
+        /// <summary>
+        /// Almacena mensajes de error durante las operaciones
+        /// </summary>
         public string Error { get; private set; }
-        private string cadenaDeConexion;
-        private string campoId;
-        private bool esAutonumerico;
-        private IValidator<T> validador;
 
         /// <summary>
-        /// Constructor para la clase MySQL
+        /// Cadena de conexión a la base de datos MySQL
         /// </summary>
-        /// <param name="cadenaDeConexion">Cadena de conexión a la base de datos MySQL</param>
-        /// <param name="validador">Validador de FluentValidation para la entidad</param>
-        /// <param name="campoId">Nombre de la propiedad que representa la clave primaria</param>
-        /// <param name="esAutonumerico">Indica si la clave primaria es autonumérica</param>
-        public MySQL(string cadenaDeConexion, object validador, string campoId, bool esAutonumerico)
+        private string cadenaDeConexion;
+
+        /// <summary>
+        /// Nombre del campo que actúa como identificador único en la tabla
+        /// </summary>
+        private string campoId;
+
+        /// <summary>
+        /// Indica si el campo ID es auto-incrementable en la base de datos
+        /// </summary>
+        private bool esAutonumerico;
+
+        /// <summary>
+        /// Validador para la entidad usando FluentValidation
+        /// </summary>
+        private AbstractValidator<T> validador;
+
+        /// <summary>
+        /// Constructor para la clase de acceso a datos MySQL
+        /// </summary>
+        /// <param name="cadenaDeConexion">Cadena de conexión a la base de datos</param>
+        /// <param name="validador">Validador específico para la entidad</param>
+        /// <param name="campoId">Nombre del campo ID en la base de datos</param>
+        /// <param name="esAutonumerico">Indica si el ID es autoincrementable</param>
+        public MySQL(string cadenaDeConexion, AbstractValidator<T> validador, string campoId, bool esAutonumerico)
         {
             this.cadenaDeConexion = cadenaDeConexion;
             this.campoId = campoId;
             this.esAutonumerico = esAutonumerico;
-            this.validador = (IValidator<T>)validador;
+            this.validador = validador;
             Error = "";
         }
 
         /// <summary>
-        /// Actualiza un registro en la base de datos
+        /// Actualiza un registro existente en la base de datos
         /// </summary>
         /// <param name="entidad">Entidad con los datos actualizados</param>
-        /// <returns>La entidad actualizada o null si hay error</returns>
+        /// <returns>La entidad actualizada o null si falla</returns>
         public T Actualizar(T entidad)
         {
             Error = "";
             try
             {
-                // Validamos la entidad con FluentValidation
+
                 var resultadoValidacion = validador.Validate(entidad);
                 if (resultadoValidacion.IsValid)
                 {
-                    // Convertimos los nombres de tabla y columnas a snake_case para MySQL
-                    string tableName = ConvertToSnakeCase(typeof(T).Name);
-                    string idColumn = ConvertToSnakeCase(campoId);
-
-                    // Preparamos la parte SET de la consulta con nombres en snake_case
-                    var setClauses = entidad.GetType().GetProperties()
-                        .Where(p => p.Name != campoId)
-                        .Select(p => $"{ConvertToSnakeCase(p.Name)}=@{p.Name}");
-
-                    string sql = $"UPDATE {tableName} SET {string.Join(",", setClauses)} WHERE {idColumn}=@Id";
-
-                    // Preparamos los parámetros
+                    // Crear consulta SQL para actualizar todos los campos excepto el ID
+                    string sql = $"UPDATE {typeof(T).Name} SET {string.Join(",",
+                    entidad.GetType().GetProperties().Where(p => p.Name !=
+                    campoId).Select(p => p.Name + "=@" + p.Name))} WHERE {campoId}=@Id";
                     Dictionary<string, object> parametros = new Dictionary<string, object>();
                     foreach (var propiedad in entidad.GetType().GetProperties().Where(p => p.Name != campoId))
                     {
-                        parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
+                        parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad));
                     }
                     parametros.Add("@Id", entidad.GetType().GetProperty(campoId).GetValue(entidad));
-
-                    // Ejecutamos el comando
                     var r = EjecutarComando(sql, parametros);
                     if (r == 1)
                     {
@@ -85,7 +97,7 @@ namespace DAL
                 }
                 else
                 {
-                    Error = string.Join(", ", resultadoValidacion.Errors.Select(e => e.ErrorMessage));
+                    Error = string.Join(",", resultadoValidacion.Errors);
                     return null;
                 }
             }
@@ -97,12 +109,12 @@ namespace DAL
         }
 
         /// <summary>
-        /// Ejecuta un procedimiento almacenado en la base de datos
+        /// Ejecuta un procedimiento almacenado y devuelve una lista de objetos del tipo especificado
         /// </summary>
-        /// <typeparam name="M">Tipo de entidad de retorno</typeparam>
+        /// <typeparam name="M">Tipo del objeto a devolver</typeparam>
         /// <param name="nombre">Nombre del procedimiento almacenado</param>
-        /// <param name="parametros">Diccionario con los parámetros del procedimiento</param>
-        /// <returns>Lista de entidades del tipo M</returns>
+        /// <param name="parametros">Parámetros para el procedimiento</param>
+        /// <returns>Lista de objetos del tipo M</returns>
         public List<M> EjecutarProcedimiento<M>(string nombre, Dictionary<string, string> parametros) where M : class
         {
             using (MySqlConnection conexion = new MySqlConnection(cadenaDeConexion))
@@ -113,7 +125,7 @@ namespace DAL
                     comando.CommandType = System.Data.CommandType.StoredProcedure;
                     foreach (var parametro in parametros)
                     {
-                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value ?? (object)DBNull.Value);
+                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
                     }
                     var reader = comando.ExecuteReader();
                     List<M> lista = new List<M>();
@@ -122,32 +134,8 @@ namespace DAL
                         M entidad = Activator.CreateInstance<M>();
                         foreach (var propiedad in entidad.GetType().GetProperties())
                         {
-                            // Convertimos el nombre de la propiedad a snake_case para MySQL
-                            string columnName = ConvertToSnakeCase(propiedad.Name);
-
-                            try
-                            {
-                                if (!reader.IsDBNull(reader.GetOrdinal(columnName)))
-                                {
-                                    propiedad.SetValue(entidad, reader[columnName]);
-                                }
-                            }
-                            catch (IndexOutOfRangeException)
-                            {
-                                // Intentamos con el nombre original si la conversión no funciona
-                                try
-                                {
-                                    if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
-                                    {
-                                        propiedad.SetValue(entidad, reader[propiedad.Name]);
-                                    }
-                                }
-                                catch (IndexOutOfRangeException)
-                                {
-                                    // La columna no existe, continuamos con la siguiente propiedad
-                                    continue;
-                                }
-                            }
+                            if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
+                                propiedad.SetValue(entidad, reader[propiedad.Name]);
                         }
                         lista.Add(entidad);
                     }
@@ -160,17 +148,13 @@ namespace DAL
         /// Elimina un registro de la base de datos
         /// </summary>
         /// <param name="entidad">Entidad a eliminar</param>
-        /// <returns>true si se eliminó correctamente, false en caso contrario</returns>
+        /// <returns>True si se eliminó correctamente, False en caso contrario</returns>
         public bool Eliminar(T entidad)
         {
             Error = "";
             try
             {
-                // Convertimos los nombres de tabla y columnas a snake_case para MySQL
-                string tableName = ConvertToSnakeCase(typeof(T).Name);
-                string idColumn = ConvertToSnakeCase(campoId);
-
-                string sql = $"DELETE FROM {tableName} WHERE {idColumn}=@Id";
+                string sql = $"DELETE FROM {typeof(T).Name} WHERE {campoId}=@Id";
                 Dictionary<string, object> parametros = new Dictionary<string, object>();
                 parametros.Add("@Id", entidad.GetType().GetProperty(campoId).GetValue(entidad));
                 return EjecutarComando(sql, parametros) == 1;
@@ -183,11 +167,11 @@ namespace DAL
         }
 
         /// <summary>
-        /// Método privado para ejecutar comandos SQL que no devuelven resultados
+        /// Ejecuta un comando SQL que no devuelve resultados (INSERT, UPDATE, DELETE)
         /// </summary>
         /// <param name="sql">Consulta SQL a ejecutar</param>
-        /// <param name="parametros">Parámetros de la consulta</param>
-        /// <returns>Número de filas afectadas o -1 en caso de error</returns>
+        /// <param name="parametros">Parámetros para la consulta</param>
+        /// <returns>Número de filas afectadas o -1 si hay error</returns>
         private int EjecutarComando(string sql, Dictionary<string, object> parametros)
         {
             try
@@ -199,7 +183,7 @@ namespace DAL
                     {
                         foreach (var parametro in parametros)
                         {
-                            comando.Parameters.AddWithValue(parametro.Key, parametro.Value ?? DBNull.Value);
+                            comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
                         }
                         return comando.ExecuteNonQuery();
                     }
@@ -216,56 +200,43 @@ namespace DAL
         /// Inserta un nuevo registro en la base de datos
         /// </summary>
         /// <param name="entidad">Entidad a insertar</param>
-        /// <returns>La entidad insertada con su ID generado o null si hay error</returns>
+        /// <returns>La entidad insertada con su ID generado (si es autonumérico) o null si falla</returns>
         public T Insertar(T entidad)
         {
             Error = "";
             try
             {
-                // Validamos la entidad con FluentValidation
+                // Establecer campos de control
+
                 var resultadoValidacion = validador.Validate(entidad);
                 if (resultadoValidacion.IsValid)
                 {
                     string sql;
                     Dictionary<string, object> parametros = new Dictionary<string, object>();
-
-                    // Convertir el nombre de la tabla a snake_case
-                    string tableName = ConvertToSnakeCase(typeof(T).Name);
-
                     if (esAutonumerico)
                     {
-                        // Preparamos las columnas en snake_case excluyendo el ID
-                        var columnas = entidad.GetType().GetProperties()
-                            .Where(p => p.Name != campoId)
-                            .Select(p => ConvertToSnakeCase(p.Name));
-
-                        var parametrosSQL = entidad.GetType().GetProperties()
-                            .Where(p => p.Name != campoId)
-                            .Select(p => "@" + p.Name);
-
-                        sql = $"INSERT INTO {tableName} ({string.Join(",", columnas)}) " +
-                              $"VALUES ({string.Join(",", parametrosSQL)})";
+                        // Si el ID es autonumérico, no lo incluimos en el INSERT
+                        sql = $"INSERT INTO {typeof(T).Name} ({string.Join(",",
+                            entidad.GetType().GetProperties().Where(p => p.Name !=
+                            campoId).Select(p => p.Name))}) VALUES ({string.Join(",",
+                            entidad.GetType().GetProperties().Where(p => p.Name !=
+                            campoId).Select(p => "@" + p.Name))})";
 
                         foreach (var propiedad in entidad.GetType().GetProperties().Where(p => p.Name != campoId))
                         {
-                            parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
+                            parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad));
                         }
                     }
                     else
                     {
-                        // Preparamos las columnas en snake_case incluyendo el ID
-                        var columnas = entidad.GetType().GetProperties()
-                            .Select(p => ConvertToSnakeCase(p.Name));
-
-                        var parametrosSQL = entidad.GetType().GetProperties()
-                            .Select(p => "@" + p.Name);
-
-                        sql = $"INSERT INTO {tableName} ({string.Join(",", columnas)}) " +
-                              $"VALUES ({string.Join(",", parametrosSQL)})";
+                        // Si el ID no es autonumérico, lo incluimos en el INSERT
+                        sql = $"INSERT INTO {typeof(T).Name} ({string.Join(",",
+                            entidad.GetType().GetProperties().Select(p => p.Name))}) VALUES ({string.Join(",",
+                            entidad.GetType().GetProperties().Select(p => "@" + p.Name))})";
 
                         foreach (var propiedad in entidad.GetType().GetProperties())
                         {
-                            parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
+                            parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad));
                         }
                     }
 
@@ -273,9 +244,8 @@ namespace DAL
                     {
                         if (esAutonumerico)
                         {
-                            // Convertir el nombre de la columna ID a snake_case para LAST_INSERT_ID()
-                            string idColumn = ConvertToSnakeCase(campoId);
-                            sql = $"SELECT * FROM {tableName} WHERE {idColumn} = LAST_INSERT_ID()";
+                            // Recuperamos la entidad recién insertada con el ID generado
+                            sql = $"SELECT * FROM {typeof(T).Name} WHERE {campoId} = LAST_INSERT_ID()";
                             var consulta = EjecutarConsulta(sql, new Dictionary<string, object>());
                             if (consulta.Count == 1)
                             {
@@ -298,7 +268,7 @@ namespace DAL
                 }
                 else
                 {
-                    Error = string.Join(", ", resultadoValidacion.Errors.Select(e => e.ErrorMessage));
+                    Error = string.Join(",", resultadoValidacion.Errors);
                     return null;
                 }
             }
@@ -313,16 +283,12 @@ namespace DAL
         /// Obtiene un registro por su ID numérico
         /// </summary>
         /// <param name="id">ID del registro a obtener</param>
-        /// <returns>La entidad con el ID especificado o null si no existe</returns>
+        /// <returns>La entidad encontrada o null si no existe</returns>
         public T ObtenerPorID(int id)
         {
             try
             {
-                // Convertir el nombre de la tabla y la columna a snake_case
-                string tableName = ConvertToSnakeCase(typeof(T).Name);
-                string idColumn = ConvertToSnakeCase(campoId);
-
-                string SQL = $"SELECT * FROM {tableName} WHERE {idColumn}=@Id";
+                string SQL = $"SELECT * FROM {typeof(T).Name} WHERE {campoId}=@Id";
                 Dictionary<string, object> parametros = new Dictionary<string, object>();
                 parametros.Add("@Id", id);
                 return EjecutarConsulta(SQL, parametros).FirstOrDefault();
@@ -338,16 +304,12 @@ namespace DAL
         /// Obtiene un registro por su ID en formato string
         /// </summary>
         /// <param name="id">ID del registro a obtener</param>
-        /// <returns>La entidad con el ID especificado o null si no existe</returns>
+        /// <returns>La entidad encontrada o null si no existe</returns>
         public T ObtenerPorID(string id)
         {
             try
             {
-                // Convertir el nombre de la tabla y la columna a snake_case
-                string tableName = ConvertToSnakeCase(typeof(T).Name);
-                string idColumn = ConvertToSnakeCase(campoId);
-
-                string SQL = $"SELECT * FROM {tableName} WHERE {idColumn}=@Id";
+                string SQL = $"SELECT * FROM {typeof(T).Name} WHERE {campoId}=@Id";
                 Dictionary<string, object> parametros = new Dictionary<string, object>();
                 parametros.Add("@Id", id);
                 return EjecutarConsulta(SQL, parametros).FirstOrDefault();
@@ -360,17 +322,14 @@ namespace DAL
         }
 
         /// <summary>
-        /// Obtiene todos los registros de la entidad
+        /// Obtiene todos los registros de la tabla
         /// </summary>
-        /// <returns>Lista con todas las entidades o null si hay error</returns>
+        /// <returns>Lista de todas las entidades</returns>
         public List<T> ObtenerTodas()
         {
             try
             {
-                // Convertir el nombre de la tabla a snake_case
-                string tableName = ConvertToSnakeCase(typeof(T).Name);
-
-                string SQL = $"SELECT * FROM {tableName}";
+                string SQL = $"SELECT * FROM {typeof(T).Name}";
                 Dictionary<string, object> parametros = new Dictionary<string, object>();
                 return EjecutarConsulta(SQL, parametros);
             }
@@ -382,11 +341,11 @@ namespace DAL
         }
 
         /// <summary>
-        /// Método para ejecutar consultas SQL que devuelven resultados
+        /// Ejecuta una consulta SQL que devuelve resultados (SELECT)
         /// </summary>
         /// <param name="sql">Consulta SQL a ejecutar</param>
-        /// <param name="parametros">Parámetros de la consulta</param>
-        /// <returns>Lista de entidades resultantes de la consulta</returns>
+        /// <param name="parametros">Parámetros para la consulta</param>
+        /// <returns>Lista de entidades que coinciden con la consulta</returns>
         private List<T> EjecutarConsulta(string sql, Dictionary<string, object> parametros)
         {
             using (MySqlConnection conexion = new MySqlConnection(cadenaDeConexion))
@@ -396,7 +355,7 @@ namespace DAL
                 {
                     foreach (var parametro in parametros)
                     {
-                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value ?? DBNull.Value);
+                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
                     }
                     var reader = comando.ExecuteReader();
                     List<T> lista = new List<T>();
@@ -405,53 +364,34 @@ namespace DAL
                         T entidad = Activator.CreateInstance<T>();
                         foreach (var propiedad in entidad.GetType().GetProperties())
                         {
-                            // Convertir el nombre de la propiedad de PascalCase a snake_case
-                            string columnName = ConvertToSnakeCase(propiedad.Name);
-
-                            // Comprobar si la columna existe en el resultado
-                            try
+                            // Solo asignamos valores a propiedades que existen en el resultado
+                            if (reader.HasRows && !reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
                             {
-                                if (!reader.IsDBNull(reader.GetOrdinal(columnName)))
+                                var value = reader[propiedad.Name];
+                                // Conversiones de tipo cuando sea necesario
+                                if (propiedad.PropertyType == typeof(int) && value is string)
                                 {
-                                    var value = reader[columnName];
-                                    if (propiedad.PropertyType == typeof(int) && value is string)
-                                    {
-                                        propiedad.SetValue(entidad, Convert.ToInt32(value));
-                                    }
-                                    else if (propiedad.PropertyType == typeof(string) && value is int)
-                                    {
-                                        propiedad.SetValue(entidad, value.ToString());
-                                    }
-                                    else if (propiedad.PropertyType == typeof(DateTime) && value is string)
-                                    {
-                                        propiedad.SetValue(entidad, DateTime.Parse(value.ToString()));
-                                    }
-                                    else if (propiedad.PropertyType == typeof(bool) && value is int)
-                                    {
-                                        // MySQL almacena booleanos como 0/1
-                                        propiedad.SetValue(entidad, Convert.ToInt32(value) != 0);
-                                    }
-                                    else
-                                    {
-                                        propiedad.SetValue(entidad, value);
-                                    }
+                                    propiedad.SetValue(entidad, Convert.ToInt32(value));
                                 }
-                            }
-                            catch (IndexOutOfRangeException)
-                            {
-                                // Intenta con el nombre original si la conversión no funciona
-                                try
+                                else if (propiedad.PropertyType == typeof(string) && value is int)
                                 {
-                                    if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
-                                    {
-                                        var value = reader[propiedad.Name];
-                                        propiedad.SetValue(entidad, value);
-                                    }
+                                    propiedad.SetValue(entidad, value.ToString());
                                 }
-                                catch (IndexOutOfRangeException)
+                                else if (propiedad.PropertyType == typeof(bool) && !(value is bool))
                                 {
-                                    // La columna no existe, continúa con la siguiente propiedad
-                                    continue;
+                                    // Convertir valores numéricos o string a booleano
+                                    if (value is int intValue)
+                                        propiedad.SetValue(entidad, intValue != 0);
+                                    else if (value is string strValue)
+                                        propiedad.SetValue(entidad, strValue.ToLower() == "true" || strValue == "1");
+                                }
+                                else if (propiedad.PropertyType == typeof(DateTime) && value is string strDate)
+                                {
+                                    propiedad.SetValue(entidad, DateTime.Parse(strDate));
+                                }
+                                else
+                                {
+                                    propiedad.SetValue(entidad, value);
                                 }
                             }
                         }
@@ -460,47 +400,6 @@ namespace DAL
                     return lista;
                 }
             }
-        }
-
-        /// <summary>
-        /// Método para convertir nombres de PascalCase a snake_case
-        /// Ejemplo: "IdUsuario" se convierte a "id_usuario"
-        /// </summary>
-        /// <param name="input">Nombre en formato PascalCase</param>
-        /// <returns>Nombre convertido a snake_case</returns>
-        private string ConvertToSnakeCase(string input)
-        {
-            if (string.IsNullOrEmpty(input)) return input;
-
-            // Para manejar casos especiales como "Ruido_Alerta"
-            // primero dividimos por los guiones bajos existentes
-            string[] parts = input.Split('_');
-            var result = new System.Text.StringBuilder();
-
-            for (int p = 0; p < parts.Length; p++)
-            {
-                if (p > 0) result.Append('_');
-
-                string part = parts[p];
-                if (string.IsNullOrEmpty(part)) continue;
-
-                result.Append(char.ToLower(part[0]));
-
-                for (int i = 1; i < part.Length; i++)
-                {
-                    if (char.IsUpper(part[i]))
-                    {
-                        result.Append('_');
-                        result.Append(char.ToLower(part[i]));
-                    }
-                    else
-                    {
-                        result.Append(part[i]);
-                    }
-                }
-            }
-
-            return result.ToString();
         }
     }
 }

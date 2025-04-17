@@ -6,14 +6,15 @@ using System.Threading.Tasks;
 
 namespace COMMON.Entidades
 {
-    public class Ajuste_Usuario:CamposControl
+    public class ajuste_usuario:CamposControl
     {
-        public int IdAjuste { get; set; }
+        public int id_ajuste { get; set; }
 
-        public int IdUsuario { get; set; }
+        public int id_usuario { get; set; }
 
-        public bool? ModoAhorroDatos { get; set; }
+        public bool? modo_ahorro_datos { get; set; }
 
-        public string? OtrosAjustes { get; set; }
+        public string? otros_ajustes { get; set; }
+        public DateTime? fecha_actualizacion_ajuste { get; set; }
     }
 }

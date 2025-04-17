@@ -8,7 +8,7 @@ namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AjusteUsuarioController:GenericController<Ajuste_Usuario>
+    public class AjusteUsuarioController:GenericController<ajuste_usuario>
     {
         public AjusteUsuarioController() : base (Parametros.FabricaRepository.AjustesUsuarioRepository())
         {

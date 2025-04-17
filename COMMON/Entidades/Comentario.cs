@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 
 namespace COMMON.Entidades
 {
-    public class Comentario: CamposControl
+    public class comentario: CamposControl
     {
-        public int IdComentario { get; set; }
+        public int id_comentario { get; set; }
 
-        public int IdFoto { get; set; }
-        public int IdUsuario { get; set; }
-        public string Contenido { get; set; }
+        public int id_foto { get; set; }
+        public int id_usuario { get; set; }
+        public string contenido { get; set; }
 
-        public DateTime FechaComentario { get; set; }
+        public DateTime fecha_comentario { get; set; }
     }
 }

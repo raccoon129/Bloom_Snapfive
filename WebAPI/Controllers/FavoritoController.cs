@@ -8,7 +8,7 @@ namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class FavoritoController : GenericController<Favorito>
+    public class FavoritoController : GenericController<favorito>
     {
         public FavoritoController() : base(Parametros.FabricaRepository.FavoritoRepository())
         {

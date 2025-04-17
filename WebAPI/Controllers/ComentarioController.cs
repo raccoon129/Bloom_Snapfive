@@ -7,7 +7,7 @@ namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ComentarioController: GenericController<Comentario>
+    public class ComentarioController: GenericController<comentario>
     {
         public ComentarioController() : base(Parametros.FabricaRepository.ComentarioRepository())
         {

@@ -9,18 +9,18 @@ using FluentValidation;
 namespace COMMON.Validadores
 {
     //Es abtract ya que como no hay campos control donde heredar
-    public class UsuarioValidator:AbstractValidator<Usuario>
+    public class UsuarioValidator:AbstractValidator<usuario>
     {
         public UsuarioValidator()
         {
-            RuleFor(x => x.NombreUsuario)
+            RuleFor(x => x.nombre_usuario)
                 .NotEmpty().WithMessage("El nombre de usuario es obligatorio")
                 .MaximumLength(100).WithMessage("El nombre de usuario no puede exceder los 100 caracteres");
 
-            RuleFor(x => x.Biografia)
+            RuleFor(x => x.biografia)
                 .MaximumLength(200).WithMessage("La biografía no puede exceder los 200 caracteres");
 
-            RuleFor(x => x.Email)
+            RuleFor(x => x.email)
                 .NotEmpty().WithMessage("El email es obligatorio")
                 .EmailAddress().WithMessage("El formato del email no es válido")
                 .MaximumLength(150).WithMessage("El email no puede exceder los 150 caracteres");
@@ -38,11 +38,11 @@ namespace COMMON.Validadores
             //    .NotEmpty().WithMessage("La foto de perfil es obligatoria");
 
             //Como en WhatsApp, siempre existirán estados predefinidos.
-            RuleFor(x => x.Estado)
+            RuleFor(x => x.estado)
                 .NotEmpty().WithMessage("El estado es obligatorio")
                 .MaximumLength(50).WithMessage("El estado no puede exceder los 50 caracteres");
 
-            RuleFor(x => x.PinContacto)
+            RuleFor(x => x.pin_contacto)
                 .NotEmpty().WithMessage("El PIN de contacto es obligatorio")
                 .Length(5).WithMessage("El PIN de contacto debe tener exactamente 5 caracteres");
         }

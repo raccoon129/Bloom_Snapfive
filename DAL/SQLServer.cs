@@ -5,66 +5,91 @@ using FluentValidation;
 using Microsoft.Data.SqlClient;
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace DAL
 {
+    /// <summary>
+    /// Implementación de acceso a datos para SQL Server aplicable a todas las entidades
+    /// del sistema que heredan de CamposControl.
+    /// </summary>
+    /// <typeparam name="T">Tipo de entidad que implementa CamposControl</typeparam>
     public class SQLServer<T> : IDB<T> where T : CamposControl
     {
+        /// <summary>
+        /// Almacena mensajes de error durante las operaciones
+        /// </summary>
         public string Error { get; private set; }
-        private readonly string cadenaDeConexion;
-        private readonly string campoId;
-        private readonly bool esAutonumerico;
-        private readonly IValidator<T> validador;
 
-        public SQLServer(string cadenaDeConexion, object validador, string campoId, bool esAutonumerico)
+        /// <summary>
+        /// Cadena de conexión a la base de datos SQL Server
+        /// </summary>
+        private readonly string _cadenaDeConexion;
+
+        /// <summary>
+        /// Nombre del campo que actúa como identificador único en la tabla
+        /// </summary>
+        private readonly string _campoId;
+
+        /// <summary>
+        /// Indica si el campo ID es auto-incrementable en la base de datos
+        /// </summary>
+        private readonly bool _esAutonumerico;
+
+        /// <summary>
+        /// Validador para la entidad usando FluentValidation
+        /// </summary>
+        private readonly AbstractValidator<T> _validador;
+
+        /// <summary>
+        /// Constructor para la clase de acceso a datos SQL Server
+        /// </summary>
+        /// <param name="cadenaDeConexion">Cadena de conexión a la base de datos</param>
+        /// <param name="validador">Validador específico para la entidad</param>
+        /// <param name="campoId">Nombre del campo ID en la base de datos</param>
+        /// <param name="esAutonumerico">Indica si el ID es autoincrementable</param>
+        public SQLServer(string cadenaDeConexion, AbstractValidator<T> validador, string campoId, bool esAutonumerico)
         {
-            this.cadenaDeConexion = cadenaDeConexion;
-            this.campoId = campoId;
-            this.esAutonumerico = esAutonumerico;
-            this.validador = (IValidator<T>)validador;
-            Error = "";
+            _cadenaDeConexion = cadenaDeConexion;
+            _campoId = campoId;
+            _esAutonumerico = esAutonumerico;
+            _validador = validador;
+            Error = string.Empty;
         }
 
+        /// <summary>
+        /// Actualiza un registro existente en la base de datos
+        /// </summary>
+        /// <param name="entidad">Entidad con los datos actualizados</param>
+        /// <returns>La entidad actualizada o null si falla</returns>
         public T Actualizar(T entidad)
         {
-            Error = "";
+            Error = string.Empty;
             try
             {
-                // En este proyecto, CamposControl no tiene propiedades de auditoría
-                // por lo que se eliminan las líneas: entidad.UsuarioMod y entidad.FechaMod
 
-                // Utilizamos FluentValidation para validar la entidad
-                var resultadoValidacion = validador.Validate(entidad);
-                if (resultadoValidacion.IsValid)
+                var validationResult = _validador.Validate(entidad);
+                if (!validationResult.IsValid)
                 {
-                    string sql = $"UPDATE {typeof(T).Name} SET {string.Join(",",
-                    entidad.GetType().GetProperties().Where(p => p.Name !=
-                    campoId).Select(p => p.Name + "=@" + p.Name))} WHERE {campoId}=@Id";
-
-                    Dictionary<string, object> parametros = new Dictionary<string, object>();
-                    foreach (var propiedad in entidad.GetType().GetProperties().Where(p => p.Name != campoId))
-                    {
-                        parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
-                    }
-                    parametros.Add("@Id", entidad.GetType().GetProperty(campoId).GetValue(entidad));
-
-                    var r = EjecutarComando(sql, parametros);
-                    if (r == 1)
-                    {
-                        return entidad;
-                    }
-                    else
-                    {
-                        return null;
-                    }
-                }
-                else
-                {
-                    Error = string.Join(", ", resultadoValidacion.Errors.Select(e => e.ErrorMessage));
+                    Error = string.Join(", ", validationResult.Errors);
                     return null;
                 }
+
+                var propiedades = entidad.GetType().GetProperties()
+                    .Where(p => p.Name != _campoId)
+                    .ToList();
+
+                var sql = $"UPDATE {typeof(T).Name} SET " +
+                          $"{string.Join(", ", propiedades.Select(p => $"{p.Name} = @{p.Name}"))} " +
+                          $"WHERE {_campoId} = @Id";
+
+                var parametros = new Dictionary<string, object>();
+                propiedades.ForEach(p => parametros.Add($"@{p.Name}", p.GetValue(entidad) ?? DBNull.Value));
+                parametros.Add("@Id", entidad.GetType().GetProperty(_campoId).GetValue(entidad));
+
+                return EjecutarComando(sql, parametros) == 1 ? entidad : null;
             }
             catch (Exception ex)
             {
@@ -73,43 +98,62 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Ejecuta un procedimiento almacenado y devuelve una lista de objetos del tipo especificado
+        /// </summary>
+        /// <typeparam name="M">Tipo del objeto a devolver</typeparam>
+        /// <param name="nombre">Nombre del procedimiento almacenado</param>
+        /// <param name="parametros">Parámetros para el procedimiento</param>
+        /// <returns>Lista de objetos del tipo M</returns>
         public List<M> EjecutarProcedimiento<M>(string nombre, Dictionary<string, string> parametros) where M : class
         {
-            using (SqlConnection conexion = new SqlConnection(cadenaDeConexion))
+            using var conexion = new SqlConnection(_cadenaDeConexion);
+            conexion.Open();
+
+            using var comando = new SqlCommand(nombre, conexion)
             {
-                conexion.Open();
-                using (SqlCommand comando = new SqlCommand(nombre, conexion))
-                {
-                    comando.CommandType = CommandType.StoredProcedure;
-                    foreach (var parametro in parametros)
-                    {
-                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value ?? (object)DBNull.Value);
-                    }
-                    var reader = comando.ExecuteReader();
-                    List<M> lista = new List<M>();
-                    while (reader.Read())
-                    {
-                        M entidad = Activator.CreateInstance<M>();
-                        foreach (var propiedad in entidad.GetType().GetProperties())
-                        {
-                            if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
-                                propiedad.SetValue(entidad, reader[propiedad.Name]);
-                        }
-                        lista.Add(entidad);
-                    }
-                    return lista;
-                }
+                CommandType = System.Data.CommandType.StoredProcedure
+            };
+
+            foreach (var param in parametros)
+            {
+                comando.Parameters.AddWithValue(param.Key, param.Value ?? (object)DBNull.Value);
             }
+
+            var reader = comando.ExecuteReader();
+            var lista = new List<M>();
+
+            while (reader.Read())
+            {
+                var entidad = Activator.CreateInstance<M>();
+                foreach (var propiedad in entidad.GetType().GetProperties())
+                {
+                    if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
+                    {
+                        propiedad.SetValue(entidad, reader[propiedad.Name]);
+                    }
+                }
+                lista.Add(entidad);
+            }
+
+            return lista;
         }
 
+        /// <summary>
+        /// Elimina un registro de la base de datos
+        /// </summary>
+        /// <param name="entidad">Entidad a eliminar</param>
+        /// <returns>True si se eliminó correctamente, False en caso contrario</returns>
         public bool Eliminar(T entidad)
         {
-            Error = "";
+            Error = string.Empty;
             try
             {
-                string sql = $"DELETE FROM {typeof(T).Name} WHERE {campoId}=@Id";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                parametros.Add("@Id", entidad.GetType().GetProperty(campoId).GetValue(entidad));
+                var sql = $"DELETE FROM {typeof(T).Name} WHERE {_campoId} = @Id";
+                var parametros = new Dictionary<string, object>
+                {
+                    { "@Id", entidad.GetType().GetProperty(_campoId).GetValue(entidad) }
+                };
                 return EjecutarComando(sql, parametros) == 1;
             }
             catch (Exception ex)
@@ -119,22 +163,26 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Ejecuta un comando SQL que no devuelve resultados (INSERT, UPDATE, DELETE)
+        /// </summary>
+        /// <param name="sql">Consulta SQL a ejecutar</param>
+        /// <param name="parametros">Parámetros para la consulta</param>
+        /// <returns>Número de filas afectadas o -1 si hay error</returns>
         private int EjecutarComando(string sql, Dictionary<string, object> parametros)
         {
             try
             {
-                using (SqlConnection conexion = new SqlConnection(cadenaDeConexion))
+                using var conexion = new SqlConnection(_cadenaDeConexion);
+                conexion.Open();
+                using var comando = new SqlCommand(sql, conexion);
+
+                foreach (var param in parametros)
                 {
-                    conexion.Open();
-                    using (SqlCommand comando = new SqlCommand(sql, conexion))
-                    {
-                        foreach (var parametro in parametros)
-                        {
-                            comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
-                        }
-                        return comando.ExecuteNonQuery();
-                    }
+                    comando.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
                 }
+
+                return comando.ExecuteNonQuery();
             }
             catch (Exception ex)
             {
@@ -143,83 +191,52 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Inserta un nuevo registro en la base de datos
+        /// </summary>
+        /// <param name="entidad">Entidad a insertar</param>
+        /// <returns>La entidad insertada con su ID generado (si es autonumérico) o null si falla</returns>
         public T Insertar(T entidad)
         {
-            Error = "";
+            Error = string.Empty;
             try
             {
-                // En este proyecto, CamposControl no tiene propiedades de auditoría
-                // por lo que se eliminan las líneas: entidad.UsuarioAlta y entidad.FechaAlta
 
-                // Utilizamos FluentValidation para validar la entidad
-                var resultadoValidacion = validador.Validate(entidad);
-                if (resultadoValidacion.IsValid)
+                var validationResult = _validador.Validate(entidad);
+                if (!validationResult.IsValid)
                 {
-                    string sql;
-                    Dictionary<string, object> parametros = new Dictionary<string, object>();
-                    if (esAutonumerico)
-                    {
-                        sql = $"INSERT INTO {typeof(T).Name} ({string.Join(",",
-                            entidad.GetType().GetProperties().Where(p => p.Name !=
-                            campoId).Select(p => p.Name))}) VALUES ({string.Join(",",
-                            entidad.GetType().GetProperties().Where(p => p.Name !=
-                            campoId).Select(p => "@" + p.Name))})";
+                    Error = string.Join(", ", validationResult.Errors);
+                    return null;
+                }
 
-                        foreach (var propiedad in entidad.GetType().GetProperties().Where(p => p.Name != campoId))
-                        {
-                            parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
-                        }
+                var propiedades = entidad.GetType().GetProperties()
+                    .Where(p => _esAutonumerico ? p.Name != _campoId : true)
+                    .ToList();
 
-                        // En SQL Server usamos SCOPE_IDENTITY() en lugar de LAST_INSERT_ID()
-                        sql += "; SELECT * FROM " + typeof(T).Name + " WHERE " + campoId + " = SCOPE_IDENTITY()";
+                var sql = $"INSERT INTO {typeof(T).Name} (" +
+                          $"{string.Join(", ", propiedades.Select(p => p.Name))}) " +
+                          $"VALUES ({string.Join(", ", propiedades.Select(p => $"@{p.Name}"))})";
 
-                        using (SqlConnection conexion = new SqlConnection(cadenaDeConexion))
-                        {
-                            conexion.Open();
-                            using (SqlCommand comando = new SqlCommand(sql, conexion))
-                            {
-                                foreach (var parametro in parametros)
-                                {
-                                    comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
-                                }
+                if (_esAutonumerico)
+                {
+                    sql += $"; SELECT * FROM {typeof(T).Name} WHERE {_campoId} = SCOPE_IDENTITY()";
+                }
 
-                                var reader = comando.ExecuteReader();
-                                if (reader.Read())
-                                {
-                                    return MapearEntidad(reader);
-                                }
-                                else
-                                {
-                                    return null;
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        sql = $"INSERT INTO {typeof(T).Name} ({string.Join(",",
-                            entidad.GetType().GetProperties().Select(p => p.Name))}) VALUES ({string.Join(",",
-                            entidad.GetType().GetProperties().Select(p => "@" + p.Name))})";
+                var parametros = new Dictionary<string, object>();
+                propiedades.ForEach(p => parametros.Add($"@{p.Name}", p.GetValue(entidad) ?? DBNull.Value));
 
-                        foreach (var propiedad in entidad.GetType().GetProperties())
-                        {
-                            parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
-                        }
-
-                        if (EjecutarComando(sql, parametros) == 1)
-                        {
-                            return entidad;
-                        }
-                        else
-                        {
-                            return null;
-                        }
-                    }
+                if (_esAutonumerico)
+                {
+                    using var conexion = new SqlConnection(_cadenaDeConexion);
+                    conexion.Open();
+                    using var comando = new SqlCommand(sql, conexion);
+                    propiedades.ForEach(p => comando.Parameters.AddWithValue($"@{p.Name}", p.GetValue(entidad) ?? DBNull.Value));
+                    var reader = comando.ExecuteReader();
+                    return reader.Read() ? MapearEntidad(reader) : null;
                 }
                 else
                 {
-                    Error = string.Join(", ", resultadoValidacion.Errors.Select(e => e.ErrorMessage));
-                    return null;
+                    return EjecutarComando(sql, parametros) == 1 ? entidad : null;
                 }
             }
             catch (Exception ex)
@@ -229,14 +246,18 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Obtiene un registro por su ID numérico
+        /// </summary>
+        /// <param name="id">ID del registro a obtener</param>
+        /// <returns>La entidad encontrada o null si no existe</returns>
         public T ObtenerPorID(int id)
         {
             try
             {
-                string SQL = $"SELECT * FROM {typeof(T).Name} WHERE {campoId}=@Id";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                parametros.Add("@Id", id);
-                return EjecutarConsulta(SQL, parametros).FirstOrDefault();
+                var sql = $"SELECT * FROM {typeof(T).Name} WHERE {_campoId} = @Id";
+                var parametros = new Dictionary<string, object> { { "@Id", id } };
+                return EjecutarConsulta(sql, parametros).FirstOrDefault();
             }
             catch (Exception ex)
             {
@@ -245,14 +266,18 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Obtiene un registro por su ID en formato string
+        /// </summary>
+        /// <param name="id">ID del registro a obtener</param>
+        /// <returns>La entidad encontrada o null si no existe</returns>
         public T ObtenerPorID(string id)
         {
             try
             {
-                string SQL = $"SELECT * FROM {typeof(T).Name} WHERE {campoId}=@Id";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                parametros.Add("@Id", id);
-                return EjecutarConsulta(SQL, parametros).FirstOrDefault();
+                var sql = $"SELECT * FROM {typeof(T).Name} WHERE {_campoId} = @Id";
+                var parametros = new Dictionary<string, object> { { "@Id", id } };
+                return EjecutarConsulta(sql, parametros).FirstOrDefault();
             }
             catch (Exception ex)
             {
@@ -261,13 +286,16 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Obtiene todos los registros de la tabla
+        /// </summary>
+        /// <returns>Lista de todas las entidades</returns>
         public List<T> ObtenerTodas()
         {
             try
             {
-                string SQL = $"SELECT * FROM {typeof(T).Name}";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                return EjecutarConsulta(SQL, parametros);
+                var sql = $"SELECT * FROM {typeof(T).Name}";
+                return EjecutarConsulta(sql, new Dictionary<string, object>());
             }
             catch (Exception ex)
             {
@@ -276,51 +304,109 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Ejecuta una consulta SQL que devuelve resultados (SELECT)
+        /// </summary>
+        /// <param name="sql">Consulta SQL a ejecutar</param>
+        /// <param name="parametros">Parámetros para la consulta</param>
+        /// <returns>Lista de entidades que coinciden con la consulta</returns>
         private List<T> EjecutarConsulta(string sql, Dictionary<string, object> parametros)
         {
-            using (SqlConnection conexion = new SqlConnection(cadenaDeConexion))
+            using var conexion = new SqlConnection(_cadenaDeConexion);
+            conexion.Open();
+            using var comando = new SqlCommand(sql, conexion);
+
+            foreach (var param in parametros)
             {
-                conexion.Open();
-                using (SqlCommand comando = new SqlCommand(sql, conexion))
-                {
-                    foreach (var parametro in parametros)
-                    {
-                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
-                    }
-                    var reader = comando.ExecuteReader();
-                    List<T> lista = new List<T>();
-                    while (reader.Read())
-                    {
-                        lista.Add(MapearEntidad(reader));
-                    }
-                    return lista;
-                }
+                comando.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
             }
+
+            var reader = comando.ExecuteReader();
+            var lista = new List<T>();
+
+            while (reader.Read())
+            {
+                lista.Add(MapearEntidad(reader));
+            }
+
+            return lista;
         }
 
+        /// <summary>
+        /// Mapea un registro del SqlDataReader a un objeto de tipo T
+        /// </summary>
+        /// <param name="reader">SqlDataReader con los datos del registro</param>
+        /// <returns>Objeto de tipo T con los datos mapeados</returns>
         private T MapearEntidad(SqlDataReader reader)
         {
-            T entidad = Activator.CreateInstance<T>();
+            var entidad = Activator.CreateInstance<T>();
             foreach (var propiedad in entidad.GetType().GetProperties())
             {
-                if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
+                try
                 {
-                    var value = reader[propiedad.Name];
-                    if (propiedad.PropertyType == typeof(int) && value is string)
+                    // Verificar si la propiedad existe en el reader
+                    if (HasColumn(reader, propiedad.Name) && !reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
                     {
-                        propiedad.SetValue(entidad, Convert.ToInt32(value));
+                        var value = reader[propiedad.Name];
+
+                        // Manejar conversiones específicas de tipos
+                        if (propiedad.PropertyType == typeof(int) && value is string strValue)
+                        {
+                            propiedad.SetValue(entidad, Convert.ToInt32(strValue));
+                        }
+                        else if (propiedad.PropertyType == typeof(string) && value is int intValue)
+                        {
+                            propiedad.SetValue(entidad, intValue.ToString());
+                        }
+                        else if (propiedad.PropertyType == typeof(bool) && !(value is bool))
+                        {
+                            // Convertir valores numéricos o string a booleano
+                            if (value is int intValue2)
+                                propiedad.SetValue(entidad, intValue2 != 0);
+                            else if (value is string strValue2)
+                                propiedad.SetValue(entidad, strValue2.ToLower() == "true" || strValue2 == "1");
+                        }
+                        else if (propiedad.PropertyType == typeof(DateTime) && value is string strDate)
+                        {
+                            propiedad.SetValue(entidad, DateTime.Parse(strDate));
+                        }
+                        else if (propiedad.PropertyType.IsEnum && value is string strEnum)
+                        {
+                            propiedad.SetValue(entidad, Enum.Parse(propiedad.PropertyType, strEnum, true));
+                        }
+                        else
+                        {
+                            // Intentar la conversión directa
+                            if (value != null && value != DBNull.Value)
+                            {
+                                propiedad.SetValue(entidad, Convert.ChangeType(value, Nullable.GetUnderlyingType(propiedad.PropertyType) ?? propiedad.PropertyType));
+                            }
+                        }
                     }
-                    else if (propiedad.PropertyType == typeof(string) && value is int)
-                    {
-                        propiedad.SetValue(entidad, value.ToString());
-                    }
-                    else
-                    {
-                        propiedad.SetValue(entidad, value);
-                    }
+                }
+                catch (Exception)
+                {
+                    // En caso de error al convertir, continuar con la siguiente propiedad
+                    continue;
                 }
             }
             return entidad;
+        }
+
+        /// <summary>
+        /// Verifica si una columna existe en el SqlDataReader
+        /// </summary>
+        /// <param name="reader">SqlDataReader a verificar</param>
+        /// <param name="columnName">Nombre de la columna</param>
+        /// <returns>True si la columna existe, False en caso contrario</returns>
+        private bool HasColumn(SqlDataReader reader, string columnName)
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (reader.GetName(i).Equals(columnName, StringComparison.InvariantCultureIgnoreCase))
+                    return true;
+            }
+            return false;
         }
     }
 }

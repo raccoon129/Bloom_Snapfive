@@ -8,18 +8,15 @@ using System.Threading.Tasks;
 
 namespace COMMON.Entidades
 {
-    public class Foto : CamposControl
+    public class foto : CamposControl
     {
-        public int IdFoto { get; set; }
+        public int if_foto { get; set; }
 
-        public int IdUsuario { get; set; }
+        public int id_usuario { get; set; }
 
-        public string UrlFoto { get; set; }
+        public string url_foto { get; set; }
 
-        public string Descripcion { get; set; }
-
-        public string Ubicacion { get; set; }
-        public DateTime FechaSubida { get; set; }
+        public DateTime fecha_subida { get; set; }
 
     }
 }

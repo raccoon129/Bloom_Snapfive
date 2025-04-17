@@ -1,55 +1,95 @@
 ﻿using COMMON;
 using COMMON.Entidades;
 using COMMON.Interfaces;
+using FluentValidation;
 using Npgsql;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace DAL
 {
+    /// <summary>
+    /// Implementación de acceso a datos para PostgreSQL/Supabase aplicable a todas las entidades
+    /// del sistema que heredan de CamposControl.
+    /// </summary>
+    /// <typeparam name="T">Tipo de entidad que implementa CamposControl</typeparam>
     public class Postgress<T> : IDB<T> where T : CamposControl
     {
+        /// <summary>
+        /// Almacena mensajes de error durante las operaciones
+        /// </summary>
         public string Error { get; private set; }
-        private string cadenaDeConexion;
-        private string campoId;
-        private bool esAutonumerico;
-        private object validador;
 
-        public Postgress(string cadenaDeConexion, object validador, string campoId, bool esAutonumerico)
+        /// <summary>
+        /// Cadena de conexión a la base de datos PostgreSQL/Supabase
+        /// </summary>
+        private readonly string _cadenaDeConexion;
+
+        /// <summary>
+        /// Nombre del campo que actúa como identificador único en la tabla
+        /// </summary>
+        private readonly string _campoId;
+
+        /// <summary>
+        /// Indica si el campo ID es auto-incrementable en la base de datos
+        /// </summary>
+        private readonly bool _esAutonumerico;
+
+        /// <summary>
+        /// Validador para la entidad usando FluentValidation
+        /// </summary>
+        private readonly AbstractValidator<T> _validador;
+
+        /// <summary>
+        /// Constructor para la clase de acceso a datos PostgreSQL/Supabase
+        /// </summary>
+        /// <param name="cadenaDeConexion">Cadena de conexión a la base de datos</param>
+        /// <param name="validador">Validador específico para la entidad</param>
+        /// <param name="campoId">Nombre del campo ID en la base de datos</param>
+        /// <param name="esAutonumerico">Indica si el ID es autoincrementable</param>
+        public Postgress(string cadenaDeConexion, AbstractValidator<T> validador, string campoId, bool esAutonumerico)
         {
-            this.cadenaDeConexion = cadenaDeConexion;
-            this.campoId = campoId;
-            this.esAutonumerico = esAutonumerico;
-            this.validador = validador;
-            Error = "";
+            _cadenaDeConexion = cadenaDeConexion;
+            _campoId = campoId;
+            _esAutonumerico = esAutonumerico;
+            _validador = validador;
+            Error = string.Empty;
         }
 
+        /// <summary>
+        /// Actualiza un registro existente en la base de datos
+        /// </summary>
+        /// <param name="entidad">Entidad con los datos actualizados</param>
+        /// <returns>La entidad actualizada o null si falla</returns>
         public T Actualizar(T entidad)
         {
-            Error = "";
+            Error = string.Empty;
             try
             {
-                string sql = $"UPDATE \"{typeof(T).Name}\" SET {string.Join(",",
-                entidad.GetType().GetProperties().Where(p => p.Name !=
-                campoId).Select(p => "\"" + p.Name + "\"=@" + p.Name))} WHERE \"{campoId}\"=@Id";
-
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                foreach (var propiedad in entidad.GetType().GetProperties().Where(p => p.Name != campoId))
+                var validationResult = _validador.Validate(entidad);
+                if (!validationResult.IsValid)
                 {
-                    parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
-                }
-                parametros.Add("@Id", entidad.GetType().GetProperty(campoId).GetValue(entidad));
-
-                var r = EjecutarComando(sql, parametros);
-                if (r == 1)
-                {
-                    return entidad;
-                }
-                else
-                {
+                    Error = string.Join(", ", validationResult.Errors);
                     return null;
                 }
+
+                var propiedades = entidad.GetType().GetProperties()
+                    .Where(p => p.Name != _campoId)
+                    .ToList();
+
+                // En PostgreSQL los nombres de columnas con mayúsculas/minúsculas deben estar entre comillas dobles
+                var sql = $"UPDATE \"{typeof(T).Name}\" SET " +
+                          $"{string.Join(", ", propiedades.Select(p => $"\"{p.Name}\" = @{p.Name}"))} " +
+                          $"WHERE \"{_campoId}\" = @Id";
+
+                var parametros = new Dictionary<string, object>();
+                propiedades.ForEach(p => parametros.Add($"@{p.Name}", p.GetValue(entidad) ?? DBNull.Value));
+                parametros.Add("@Id", entidad.GetType().GetProperty(_campoId).GetValue(entidad));
+
+                return EjecutarComando(sql, parametros) == 1 ? entidad : null;
             }
             catch (Exception ex)
             {
@@ -58,52 +98,62 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Ejecuta un procedimiento almacenado y devuelve una lista de objetos del tipo especificado
+        /// </summary>
+        /// <typeparam name="M">Tipo del objeto a devolver</typeparam>
+        /// <param name="nombre">Nombre del procedimiento almacenado</param>
+        /// <param name="parametros">Parámetros para el procedimiento</param>
+        /// <returns>Lista de objetos del tipo M</returns>
         public List<M> EjecutarProcedimiento<M>(string nombre, Dictionary<string, string> parametros) where M : class
         {
-            using (NpgsqlConnection conexion = new NpgsqlConnection(cadenaDeConexion))
-            {
-                conexion.Open();
-                using (NpgsqlCommand comando = new NpgsqlCommand(nombre, conexion))
-                {
-                    comando.CommandType = System.Data.CommandType.StoredProcedure;
-                    foreach (var parametro in parametros)
-                    {
-                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value ?? (object)DBNull.Value);
-                    }
+            using var conexion = new NpgsqlConnection(_cadenaDeConexion);
+            conexion.Open();
 
-                    var reader = comando.ExecuteReader();
-                    List<M> lista = new List<M>();
-                    while (reader.Read())
-                    {
-                        M entidad = Activator.CreateInstance<M>();
-                        foreach (var propiedad in entidad.GetType().GetProperties())
-                        {
-                            try
-                            {
-                                if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
-                                    propiedad.SetValue(entidad, reader[propiedad.Name]);
-                            }
-                            catch
-                            {
-                                // Columna no existe en el resultado
-                                continue;
-                            }
-                        }
-                        lista.Add(entidad);
-                    }
-                    return lista;
-                }
+            using var comando = new NpgsqlCommand(nombre, conexion)
+            {
+                CommandType = System.Data.CommandType.StoredProcedure
+            };
+
+            foreach (var param in parametros)
+            {
+                comando.Parameters.AddWithValue(param.Key, param.Value ?? (object)DBNull.Value);
             }
+
+            var reader = comando.ExecuteReader();
+            var lista = new List<M>();
+
+            while (reader.Read())
+            {
+                var entidad = Activator.CreateInstance<M>();
+                foreach (var propiedad in entidad.GetType().GetProperties())
+                {
+                    if (HasColumn(reader, propiedad.Name) && !reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
+                    {
+                        propiedad.SetValue(entidad, reader[propiedad.Name]);
+                    }
+                }
+                lista.Add(entidad);
+            }
+
+            return lista;
         }
 
+        /// <summary>
+        /// Elimina un registro de la base de datos
+        /// </summary>
+        /// <param name="entidad">Entidad a eliminar</param>
+        /// <returns>True si se eliminó correctamente, False en caso contrario</returns>
         public bool Eliminar(T entidad)
         {
-            Error = "";
+            Error = string.Empty;
             try
             {
-                string sql = $"DELETE FROM \"{typeof(T).Name}\" WHERE \"{campoId}\"=@Id";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                parametros.Add("@Id", entidad.GetType().GetProperty(campoId).GetValue(entidad));
+                var sql = $"DELETE FROM \"{typeof(T).Name}\" WHERE \"{_campoId}\" = @Id";
+                var parametros = new Dictionary<string, object>
+                {
+                    { "@Id", entidad.GetType().GetProperty(_campoId).GetValue(entidad) }
+                };
                 return EjecutarComando(sql, parametros) == 1;
             }
             catch (Exception ex)
@@ -113,22 +163,26 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Ejecuta un comando SQL que no devuelve resultados (INSERT, UPDATE, DELETE)
+        /// </summary>
+        /// <param name="sql">Consulta SQL a ejecutar</param>
+        /// <param name="parametros">Parámetros para la consulta</param>
+        /// <returns>Número de filas afectadas o -1 si hay error</returns>
         private int EjecutarComando(string sql, Dictionary<string, object> parametros)
         {
             try
             {
-                using (NpgsqlConnection conexion = new NpgsqlConnection(cadenaDeConexion))
+                using var conexion = new NpgsqlConnection(_cadenaDeConexion);
+                conexion.Open();
+                using var comando = new NpgsqlCommand(sql, conexion);
+
+                foreach (var param in parametros)
                 {
-                    conexion.Open();
-                    using (NpgsqlCommand comando = new NpgsqlCommand(sql, conexion))
-                    {
-                        foreach (var parametro in parametros)
-                        {
-                            comando.Parameters.AddWithValue(parametro.Key, parametro.Value ?? DBNull.Value);
-                        }
-                        return comando.ExecuteNonQuery();
-                    }
+                    comando.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
                 }
+
+                return comando.ExecuteNonQuery();
             }
             catch (Exception ex)
             {
@@ -137,82 +191,57 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Inserta un nuevo registro en la base de datos
+        /// </summary>
+        /// <param name="entidad">Entidad a insertar</param>
+        /// <returns>La entidad insertada con su ID generado (si es autonumérico) o null si falla</returns>
         public T Insertar(T entidad)
         {
-            Error = "";
+            Error = string.Empty;
             try
             {
-                string sql;
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-
-                if (esAutonumerico)
+                var validationResult = _validador.Validate(entidad);
+                if (!validationResult.IsValid)
                 {
-                    // PostgreSQL usa RETURNING para obtener el ID generado
-                    sql = $"INSERT INTO \"{typeof(T).Name}\" ({string.Join(",",
-                        entidad.GetType().GetProperties().Where(p => p.Name !=
-                        campoId).Select(p => "\"" + p.Name + "\""))}) VALUES ({string.Join(",",
-                        entidad.GetType().GetProperties().Where(p => p.Name !=
-                        campoId).Select(p => "@" + p.Name))}) RETURNING \"{campoId}\"";
+                    Error = string.Join(", ", validationResult.Errors);
+                    return null;
+                }
 
-                    foreach (var propiedad in entidad.GetType().GetProperties().Where(p => p.Name != campoId))
+                var propiedades = entidad.GetType().GetProperties()
+                    .Where(p => _esAutonumerico ? p.Name != _campoId : true)
+                    .ToList();
+
+                var sql = $"INSERT INTO \"{typeof(T).Name}\" (" +
+                          $"{string.Join(", ", propiedades.Select(p => $"\"{p.Name}\""))} " +
+                          $") VALUES ({string.Join(", ", propiedades.Select(p => $"@{p.Name}"))})";
+
+                // PostgreSQL utiliza RETURNING para obtener el ID generado
+                if (_esAutonumerico)
+                {
+                    sql += $" RETURNING *";
+                }
+
+                if (_esAutonumerico)
+                {
+                    // En PostgreSQL podemos recuperar directamente la entidad completa con RETURNING
+                    using var conexion = new NpgsqlConnection(_cadenaDeConexion);
+                    conexion.Open();
+                    using var comando = new NpgsqlCommand(sql, conexion);
+
+                    foreach (var propiedad in propiedades)
                     {
-                        parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
+                        comando.Parameters.AddWithValue($"@{propiedad.Name}", propiedad.GetValue(entidad) ?? DBNull.Value);
                     }
 
-                    // Ejecutar comando y obtener ID generado
-                    using (NpgsqlConnection conexion = new NpgsqlConnection(cadenaDeConexion))
-                    {
-                        conexion.Open();
-                        using (NpgsqlCommand comando = new NpgsqlCommand(sql, conexion))
-                        {
-                            foreach (var parametro in parametros)
-                            {
-                                comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
-                            }
-
-                            // Obtener el ID generado
-                            var idGenerado = comando.ExecuteScalar();
-                            if (idGenerado != null)
-                            {
-                                // Asignar el ID generado a la entidad
-                                var propiedadId = entidad.GetType().GetProperty(campoId);
-                                if (propiedadId.PropertyType == typeof(int))
-                                {
-                                    propiedadId.SetValue(entidad, Convert.ToInt32(idGenerado));
-                                }
-                                else
-                                {
-                                    propiedadId.SetValue(entidad, idGenerado);
-                                }
-
-                                return entidad;
-                            }
-                            else
-                            {
-                                return null;
-                            }
-                        }
-                    }
+                    var reader = comando.ExecuteReader();
+                    return reader.Read() ? MapearEntidad(reader) : null;
                 }
                 else
                 {
-                    sql = $"INSERT INTO \"{typeof(T).Name}\" ({string.Join(",",
-                        entidad.GetType().GetProperties().Select(p => "\"" + p.Name + "\""))}) VALUES ({string.Join(",",
-                        entidad.GetType().GetProperties().Select(p => "@" + p.Name))})";
-
-                    foreach (var propiedad in entidad.GetType().GetProperties())
-                    {
-                        parametros.Add("@" + propiedad.Name, propiedad.GetValue(entidad) ?? DBNull.Value);
-                    }
-
-                    if (EjecutarComando(sql, parametros) == 1)
-                    {
-                        return entidad;
-                    }
-                    else
-                    {
-                        return null;
-                    }
+                    var parametros = new Dictionary<string, object>();
+                    propiedades.ForEach(p => parametros.Add($"@{p.Name}", p.GetValue(entidad) ?? DBNull.Value));
+                    return EjecutarComando(sql, parametros) == 1 ? entidad : null;
                 }
             }
             catch (Exception ex)
@@ -222,14 +251,18 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Obtiene un registro por su ID numérico
+        /// </summary>
+        /// <param name="id">ID del registro a obtener</param>
+        /// <returns>La entidad encontrada o null si no existe</returns>
         public T ObtenerPorID(int id)
         {
             try
             {
-                string SQL = $"SELECT * FROM \"{typeof(T).Name}\" WHERE \"{campoId}\"=@Id";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                parametros.Add("@Id", id);
-                return EjecutarConsulta(SQL, parametros).FirstOrDefault();
+                var sql = $"SELECT * FROM \"{typeof(T).Name}\" WHERE \"{_campoId}\" = @Id";
+                var parametros = new Dictionary<string, object> { { "@Id", id } };
+                return EjecutarConsulta(sql, parametros).FirstOrDefault();
             }
             catch (Exception ex)
             {
@@ -238,14 +271,18 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Obtiene un registro por su ID en formato string
+        /// </summary>
+        /// <param name="id">ID del registro a obtener</param>
+        /// <returns>La entidad encontrada o null si no existe</returns>
         public T ObtenerPorID(string id)
         {
             try
             {
-                string SQL = $"SELECT * FROM \"{typeof(T).Name}\" WHERE \"{campoId}\"=@Id";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                parametros.Add("@Id", id);
-                return EjecutarConsulta(SQL, parametros).FirstOrDefault();
+                var sql = $"SELECT * FROM \"{typeof(T).Name}\" WHERE \"{_campoId}\" = @Id";
+                var parametros = new Dictionary<string, object> { { "@Id", id } };
+                return EjecutarConsulta(sql, parametros).FirstOrDefault();
             }
             catch (Exception ex)
             {
@@ -254,13 +291,16 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Obtiene todos los registros de la tabla
+        /// </summary>
+        /// <returns>Lista de todas las entidades</returns>
         public List<T> ObtenerTodas()
         {
             try
             {
-                string SQL = $"SELECT * FROM \"{typeof(T).Name}\"";
-                Dictionary<string, object> parametros = new Dictionary<string, object>();
-                return EjecutarConsulta(SQL, parametros);
+                var sql = $"SELECT * FROM \"{typeof(T).Name}\"";
+                return EjecutarConsulta(sql, new Dictionary<string, object>());
             }
             catch (Exception ex)
             {
@@ -269,59 +309,119 @@ namespace DAL
             }
         }
 
+        /// <summary>
+        /// Ejecuta una consulta SQL que devuelve resultados (SELECT)
+        /// </summary>
+        /// <param name="sql">Consulta SQL a ejecutar</param>
+        /// <param name="parametros">Parámetros para la consulta</param>
+        /// <returns>Lista de entidades que coinciden con la consulta</returns>
         private List<T> EjecutarConsulta(string sql, Dictionary<string, object> parametros)
         {
-            using (NpgsqlConnection conexion = new NpgsqlConnection(cadenaDeConexion))
-            {
-                conexion.Open();
-                using (NpgsqlCommand comando = new NpgsqlCommand(sql, conexion))
-                {
-                    foreach (var parametro in parametros)
-                    {
-                        comando.Parameters.AddWithValue(parametro.Key, parametro.Value);
-                    }
+            using var conexion = new NpgsqlConnection(_cadenaDeConexion);
+            conexion.Open();
+            using var comando = new NpgsqlCommand(sql, conexion);
 
-                    var reader = comando.ExecuteReader();
-                    List<T> lista = new List<T>();
-                    while (reader.Read())
+            foreach (var param in parametros)
+            {
+                comando.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
+            }
+
+            var reader = comando.ExecuteReader();
+            var lista = new List<T>();
+
+            while (reader.Read())
+            {
+                lista.Add(MapearEntidad(reader));
+            }
+
+            return lista;
+        }
+
+        /// <summary>
+        /// Mapea un registro del NpgsqlDataReader a un objeto de tipo T
+        /// </summary>
+        /// <param name="reader">NpgsqlDataReader con los datos del registro</param>
+        /// <returns>Objeto de tipo T con los datos mapeados</returns>
+        private T MapearEntidad(NpgsqlDataReader reader)
+        {
+            var entidad = Activator.CreateInstance<T>();
+            foreach (var propiedad in entidad.GetType().GetProperties())
+            {
+                try
+                {
+                    // Verificar si la propiedad existe en el reader
+                    if (HasColumn(reader, propiedad.Name) && !reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
                     {
-                        T entidad = Activator.CreateInstance<T>();
-                        foreach (var propiedad in entidad.GetType().GetProperties())
+                        var value = reader[propiedad.Name];
+
+                        // Manejar conversiones específicas de tipos
+                        if (propiedad.PropertyType == typeof(int) && value is string strValue)
                         {
-                            try
+                            propiedad.SetValue(entidad, Convert.ToInt32(strValue));
+                        }
+                        else if (propiedad.PropertyType == typeof(string) && value is int intValue)
+                        {
+                            propiedad.SetValue(entidad, intValue.ToString());
+                        }
+                        else if (propiedad.PropertyType == typeof(bool) && !(value is bool))
+                        {
+                            // Convertir valores numéricos o string a booleano
+                            if (value is int intValue2)
+                                propiedad.SetValue(entidad, intValue2 != 0);
+                            else if (value is string strValue2)
+                                propiedad.SetValue(entidad, strValue2.ToLower() == "true" || strValue2 == "1");
+                        }
+                        else if (propiedad.PropertyType == typeof(DateTime) && value is string strDate)
+                        {
+                            propiedad.SetValue(entidad, DateTime.Parse(strDate));
+                        }
+                        else if (propiedad.PropertyType.IsEnum && value is string strEnum)
+                        {
+                            propiedad.SetValue(entidad, Enum.Parse(propiedad.PropertyType, strEnum, true));
+                        }
+                        else if (propiedad.PropertyType == typeof(DateTime) && value is TimeSpan)
+                        {
+                            // PostgreSQL puede devolver TimeSpan para campos de tipo time
+                            propiedad.SetValue(entidad, DateTime.Today.Add((TimeSpan)value));
+                        }
+                        else if (propiedad.PropertyType == typeof(Guid) && value is string guidString)
+                        {
+                            propiedad.SetValue(entidad, Guid.Parse(guidString));
+                        }
+                        else
+                        {
+                            // Intentar la conversión directa
+                            if (value != null && value != DBNull.Value)
                             {
-                                if (!reader.IsDBNull(reader.GetOrdinal(propiedad.Name)))
-                                {
-                                    var value = reader[propiedad.Name];
-                                    if (propiedad.PropertyType == typeof(int) && value is string)
-                                    {
-                                        propiedad.SetValue(entidad, Convert.ToInt32(value));
-                                    }
-                                    else if (propiedad.PropertyType == typeof(string) && value is int)
-                                    {
-                                        propiedad.SetValue(entidad, value.ToString());
-                                    }
-                                    else if (propiedad.PropertyType == typeof(DateTime) && value is string)
-                                    {
-                                        propiedad.SetValue(entidad, DateTime.Parse(value.ToString()));
-                                    }
-                                    else
-                                    {
-                                        propiedad.SetValue(entidad, value);
-                                    }
-                                }
-                            }
-                            catch
-                            {
-                                // Columna no existe o error de conversión
-                                continue;
+                                var targetType = Nullable.GetUnderlyingType(propiedad.PropertyType) ?? propiedad.PropertyType;
+                                propiedad.SetValue(entidad, Convert.ChangeType(value, targetType));
                             }
                         }
-                        lista.Add(entidad);
                     }
-                    return lista;
+                }
+                catch (Exception)
+                {
+                    // En caso de error al convertir, continuar con la siguiente propiedad
+                    continue;
                 }
             }
+            return entidad;
+        }
+
+        /// <summary>
+        /// Verifica si una columna existe en el NpgsqlDataReader
+        /// </summary>
+        /// <param name="reader">NpgsqlDataReader a verificar</param>
+        /// <param name="columnName">Nombre de la columna</param>
+        /// <returns>True si la columna existe, False en caso contrario</returns>
+        private bool HasColumn(NpgsqlDataReader reader, string columnName)
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                if (reader.GetName(i).Equals(columnName, StringComparison.InvariantCultureIgnoreCase))
+                    return true;
+            }
+            return false;
         }
     }
 }

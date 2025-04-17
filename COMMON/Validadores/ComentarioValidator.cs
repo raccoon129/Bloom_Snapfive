@@ -8,19 +8,19 @@ using FluentValidation;
 
 namespace COMMON.Validadores
 {
-    public class ComentarioValidator:AbstractValidator<Comentario>
+    public class ComentarioValidator:AbstractValidator<comentario>
     {
         public ComentarioValidator()
         {
-            RuleFor(x => x.IdFoto)
+            RuleFor(x => x.id_foto)
                 .NotEmpty().WithMessage("El ID de la foto es obligatorio")
                 .GreaterThan(0).WithMessage("El ID de la foto debe ser mayor que 0");
 
-            RuleFor(x => x.IdUsuario)
+            RuleFor(x => x.id_usuario)
                 .NotEmpty().WithMessage("El ID del usuario es obligatorio")
                 .GreaterThan(0).WithMessage("El ID del usuario debe ser mayor que 0");
 
-            RuleFor(x => x.Contenido)
+            RuleFor(x => x.contenido)
                 .NotEmpty().WithMessage("El contenido del comentario es obligatorio")
                 .MaximumLength(1000).WithMessage("El contenido del comentario no puede exceder los 1000 caracteres");
         }

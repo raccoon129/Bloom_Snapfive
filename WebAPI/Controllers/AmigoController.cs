@@ -7,7 +7,7 @@ namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AmigoController:GenericController<Amigo>
+    public class AmigoController:GenericController<amigo>
     {
         public AmigoController() : base(Parametros.FabricaRepository.AmigoRepository())
         {

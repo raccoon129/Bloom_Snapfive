@@ -6,18 +6,18 @@ using System.Threading.Tasks;
 
 namespace COMMON.Entidades
 {
-    public class Amigo:CamposControl
+    public class amigo:CamposControl
     {
-        public int IdAmigo { get; set; }
+        public int id_amigo { get; set; }
 
-        public int IdUsuario { get; set; }
-        public int IdAmigoUsuario { get; set; }
+        public int id_usuario { get; set; }
+        public int id_amigo_usuario { get; set; }
 
-        public string Estado { get; set; }
+        public string estado { get; set; }
 
-        public DateTime FechaSolicitud { get; set; }
+        public DateTime fecha_solicitud { get; set; }
 
-        public DateTime? FechaAceptacion { get; set; }
+        public DateTime? fecha_aceptacion { get; set; }
 
     }
 }

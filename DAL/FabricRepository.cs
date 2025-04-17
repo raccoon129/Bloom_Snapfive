@@ -16,106 +16,122 @@ namespace DAL
             _cadenaDeConexion = cadenaDeConexion;
             _tipoDB = tipoDB;
         }
-        public IDB<Ajuste_Usuario> AjustesUsuarioRepository()
+        public IDB<ajuste_usuario> AjustesUsuarioRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Ajuste_Usuario>(_cadenaDeConexion, new AjusteUsuarioValidator(), "IdAjuste", true);
+                    return new Postgress<ajuste_usuario>(_cadenaDeConexion, new AjusteUsuarioValidator(), "id_ajuste", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Ajuste_Usuario>(_cadenaDeConexion, new AjusteUsuarioValidator(), "IdAjuste", false);
+                    return new MySQL<ajuste_usuario>(_cadenaDeConexion, new AjusteUsuarioValidator(), "id_ajuste", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Ajuste_Usuario>(_cadenaDeConexion, new AjusteUsuarioValidator(), "IdAjuste", true);
+                    return new SQLServer<ajuste_usuario>(_cadenaDeConexion, new AjusteUsuarioValidator(), "id_ajuste", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
         }
 
-        public IDB<Amigo> AmigoRepository()
+        public IDB<amigo> AmigoRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Amigo>(_cadenaDeConexion, new AmigoValidator(), "IdAmigo", true);
+                    return new Postgress<amigo>(_cadenaDeConexion, new AmigoValidator(), "id_amigo", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Amigo>(_cadenaDeConexion, new AmigoValidator(), "IdAmigo", false);
+                    return new MySQL<amigo>(_cadenaDeConexion, new AmigoValidator(), "id_amigo", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Amigo>(_cadenaDeConexion, new AmigoValidator(), "IdAmigo", true);
+                    return new SQLServer<amigo>(_cadenaDeConexion, new AmigoValidator(), "id_amigo", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
         }
 
-        public IDB<Comentario> ComentarioRepository()
+        public IDB<comentario> ComentarioRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Comentario>(_cadenaDeConexion, new ComentarioValidator(), "IdComentario", true);
+                    return new Postgress<comentario>(_cadenaDeConexion, new ComentarioValidator(), "id_comentario", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Comentario>(_cadenaDeConexion, new ComentarioValidator(), "IdComentario", false);
+                    return new MySQL<comentario>(_cadenaDeConexion, new ComentarioValidator(), "id_comentario", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Comentario>(_cadenaDeConexion, new ComentarioValidator(), "IdComentario", true);
+                    return new SQLServer<comentario>(_cadenaDeConexion, new ComentarioValidator(), "id_comentario", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
         }
 
-        public IDB<Favorito> FavoritoRepository()
+        public IDB<favorito> FavoritoRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Favorito>(_cadenaDeConexion, new FavoritoValidator(), "IdFavorito", true);
+                    return new Postgress<favorito>(_cadenaDeConexion, new FavoritoValidator(), "if_favorito", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Favorito>(_cadenaDeConexion, new FavoritoValidator(), "IdFavorito", false);
+                    return new MySQL<favorito>(_cadenaDeConexion, new FavoritoValidator(), "if_favorito", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Favorito>(_cadenaDeConexion, new FavoritoValidator(), "IdFavorito", true);
+                    return new SQLServer<favorito>(_cadenaDeConexion, new FavoritoValidator(), "if_favorito", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
         }
 
-        public IDB<Foto> FotoRepository()
+        public IDB<foto> FotoRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Foto>(_cadenaDeConexion, new FotoValidator(), "IdFoto", true);
+                    return new Postgress<foto>(_cadenaDeConexion, new FotoValidator(), "if_foto", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Foto>(_cadenaDeConexion, new FotoValidator(), "IdFoto", false);
+                    return new MySQL<foto>(_cadenaDeConexion, new FotoValidator(), "if_foto", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Foto>(_cadenaDeConexion, new FotoValidator(), "IdFoto", true);
+                    return new SQLServer<foto>(_cadenaDeConexion, new FotoValidator(), "if_foto", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
         }
 
-        public IDB<Ruido_Alerta> RuidoAlertaRepository()
+        public IDB<alerta> RuidoAlertaRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Ruido_Alerta>(_cadenaDeConexion, new RuidoAlertaValidator(), "IdAlerta", true);
+                    return new Postgress<alerta>(_cadenaDeConexion, new AlertaValidator(), "id_alerta", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Ruido_Alerta>(_cadenaDeConexion, new RuidoAlertaValidator(), "IdAlerta", false);
+                    return new MySQL<alerta>(_cadenaDeConexion, new AlertaValidator(), "id_alerta", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Ruido_Alerta>(_cadenaDeConexion, new RuidoAlertaValidator(), "IdAlerta", true);
+                    return new SQLServer<alerta>(_cadenaDeConexion, new AlertaValidator(), "id_alerta", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
         }
 
-        public IDB<Usuario> UsuarioRepository()
+        public IDB<usuario> UsuarioRepository()
         {
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<Usuario>(_cadenaDeConexion, new UsuarioValidator(), "IdUsuario", true);
+                    return new Postgress<usuario>(_cadenaDeConexion, new UsuarioValidator(), "id_usuario", true);
                 case TipoDB.MySQL:
-                    return new MySQL<Usuario>(_cadenaDeConexion, new UsuarioValidator(), "IdUsuario", false);
+                    return new MySQL<usuario>(_cadenaDeConexion, new UsuarioValidator(), "id_usuario", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<Usuario>(_cadenaDeConexion, new UsuarioValidator(), "IdUsuario", true);
+                    return new SQLServer<usuario>(_cadenaDeConexion, new UsuarioValidator(), "id_usuario", true);
+                default:
+                    throw new NotImplementedException("Tipo de base de datos no soportado");
+            }
+        }
+
+
+        public IDB<publicacion> PublicacionRepository()
+        {
+            switch (_tipoDB)
+            {
+                case TipoDB.Postgress:
+                    return new Postgress<publicacion>(_cadenaDeConexion, new PublicacionValidator(), "id_publicacion", true);
+                case TipoDB.MySQL:
+                    return new MySQL<publicacion>(_cadenaDeConexion, new PublicacionValidator(), "id_publicacion", false);
+                case TipoDB.SQLServer:
+                    return new SQLServer<publicacion>(_cadenaDeConexion, new PublicacionValidator(), "id_publicacion", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }

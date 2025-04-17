@@ -3,16 +3,15 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Mvc;
 using RouteAttribute = Microsoft.AspNetCore.Components.RouteAttribute;
 
+
 namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class UsuarioController : GenericController<usuario>
+    public class AlertaController : GenericController<alerta>
     {
-        public UsuarioController() : base(Parametros.FabricaRepository.UsuarioRepository())
+        public AlertaController() : base(Parametros.FabricaRepository.RuidoAlertaRepository())
         {
         }
     }
-    
-    
 }

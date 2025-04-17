@@ -6,13 +6,13 @@ using System.Threading.Tasks;
 
 namespace COMMON.Entidades
 {
-    public class Favorito : CamposControl
+    public class favorito : CamposControl
     {
-        public int IdFavorito { get; set; }
+        public int if_favorito { get; set; }
 
-        public int IdFoto { get; set; }
-        public int IdUsuario { get; set; }
+        public int id_foto { get; set; }
+        public int id_usuario { get; set; }
 
-        public DateTime FechaFavorito { get; set; }
+        public DateTime fecha_favorito { get; set; }
     }
 }
