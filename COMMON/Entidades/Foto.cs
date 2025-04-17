@@ -10,7 +10,7 @@ namespace COMMON.Entidades
 {
     public class foto : CamposControl
     {
-        public int if_foto { get; set; }
+        public int id_foto { get; set; }
 
         public int id_usuario { get; set; }
 

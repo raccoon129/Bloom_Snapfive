@@ -8,7 +8,7 @@ namespace COMMON.Entidades
 {
     public class favorito : CamposControl
     {
-        public int if_favorito { get; set; }
+        public int id_favorito { get; set; }
 
         public int id_foto { get; set; }
         public int id_usuario { get; set; }

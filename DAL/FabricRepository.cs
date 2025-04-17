@@ -66,11 +66,11 @@ namespace DAL
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<favorito>(_cadenaDeConexion, new FavoritoValidator(), "if_favorito", true);
+                    return new Postgress<favorito>(_cadenaDeConexion, new FavoritoValidator(), "id_favorito", true);
                 case TipoDB.MySQL:
-                    return new MySQL<favorito>(_cadenaDeConexion, new FavoritoValidator(), "if_favorito", false);
+                    return new MySQL<favorito>(_cadenaDeConexion, new FavoritoValidator(), "id_favorito", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<favorito>(_cadenaDeConexion, new FavoritoValidator(), "if_favorito", true);
+                    return new SQLServer<favorito>(_cadenaDeConexion, new FavoritoValidator(), "id_favorito", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
@@ -81,11 +81,11 @@ namespace DAL
             switch (_tipoDB)
             {
                 case TipoDB.Postgress:
-                    return new Postgress<foto>(_cadenaDeConexion, new FotoValidator(), "if_foto", true);
+                    return new Postgress<foto>(_cadenaDeConexion, new FotoValidator(), "id_foto", true);
                 case TipoDB.MySQL:
-                    return new MySQL<foto>(_cadenaDeConexion, new FotoValidator(), "if_foto", false);
+                    return new MySQL<foto>(_cadenaDeConexion, new FotoValidator(), "id_foto", false);
                 case TipoDB.SQLServer:
-                    return new SQLServer<foto>(_cadenaDeConexion, new FotoValidator(), "if_foto", true);
+                    return new SQLServer<foto>(_cadenaDeConexion, new FotoValidator(), "id_foto", true);
                 default:
                     throw new NotImplementedException("Tipo de base de datos no soportado");
             }
